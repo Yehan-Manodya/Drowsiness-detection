@@ -1,0 +1,15 @@
+code .gitignore
+```
+
+```
+venv/
+__pycache__/
+*.pyc
+*.pyo
+models/*.pt
+.env
+*.mp4
+*.avi
+data/videos/
+data/images/
+.vs/
