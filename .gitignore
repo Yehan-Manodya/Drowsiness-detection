@@ -13,3 +13,4 @@ models/*.pt
 data/videos/
 data/images/
 .vs/
+data/raw/
