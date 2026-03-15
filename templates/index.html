@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drowsiness Detection System</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <div class="header">
+        <h1>🚨 Drowsiness Detection System</h1>
+        <p>AI-Powered Real-Time Driver Safety</p>
+    </div>
+
+    <div class="container">
+
+        <!-- Upload Section -->
+        <div class="upload-section">
+            <h2>Upload Image or Video Frame</h2>
+            <input type="file" id="imageInput" accept="image/*">
+            <button onclick="analyzeImage()">Analyze</button>
+        </div>
+
+        <!-- Webcam Section -->
+        <div class="webcam-section">
+            <h2>Live Webcam Detection</h2>
+            <button onclick="startWebcam()">Start Webcam</button>
+            <button onclick="stopWebcam()">Stop Webcam</button>
+            <br><br>
+            <video id="webcam" autoplay playsinline></video>
+            <canvas id="canvas" style="display:none"></canvas>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section">
+            <h2>Detection Result</h2>
+            <div id="status-box" class="status-box">
+                <p>Waiting for input...</p>
+            </div>
+            <div class="metrics">
+                <div class="metric">
+                    <span>Status</span>
+                    <strong id="label">-</strong>
+                </div>
+                <div class="metric">
+                    <span>Confidence</span>
+                    <strong id="confidence">-</strong>
+                </div>
+                <div class="metric">
+                    <span>EAR</span>
+                    <strong id="ear">-</strong>
+                </div>
+                <div class="metric">
+                    <span>MAR</span>
+                    <strong id="mar">-</strong>
+                </div>
+                <div class="metric">
+                    <span>Source</span>
+                    <strong id="source">-</strong>
+                </div>
+            </div>
+            <img id="annotated-image" src="" alt="Annotated Result">
+        </div>
+
+    </div>
+
+    <script>
+        let webcamStream = null;
+        let webcamInterval = null;
+
+        // ── Analyze uploaded image ──────────────────────────
+        async function analyzeImage() {
+            const input = document.getElementById('imageInput');
+            if (!input.files[0]) {
+                alert('Please select an image first');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', input.files[0]);
+
+            const response = await fetch('/analyze', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+            displayResult(result);
+        }
+
+        // ── Start webcam ────────────────────────────────────
+        async function startWebcam() {
+            webcamStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            document.getElementById('webcam').srcObject = webcamStream;
+
+            // Analyze every 500ms
+            webcamInterval = setInterval(captureAndAnalyze, 500);
+        }
+
+        // ── Stop webcam ─────────────────────────────────────
+        function stopWebcam() {
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                webcamStream = null;
+            }
+            if (webcamInterval) {
+                clearInterval(webcamInterval);
+                webcamInterval = null;
+            }
+            document.getElementById('webcam').srcObject = null;
+        }
+
+        // ── Capture frame and analyze ───────────────────────
+        async function captureAndAnalyze() {
+            const video = document.getElementById('webcam');
+            const canvas = document.getElementById('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('file', blob, 'frame.jpg');
+
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                displayResult(result);
+            }, 'image/jpeg');
+        }
+
+        // ── Display results ─────────────────────────────────
+        function displayResult(result) {
+            if (result.error) {
+                document.getElementById('status-box').innerHTML = 
+                    `<p style="color:orange">⚠ ${result.error}</p>`;
+                return;
+            }
+
+            const isDrowsy = result.label === 'drowsy';
+            const statusBox = document.getElementById('status-box');
+            statusBox.className = isDrowsy ? 'status-box drowsy' : 'status-box alert';
+            statusBox.innerHTML = isDrowsy ? '🚨 DROWSY DETECTED!' : '✅ ALERT';
+
+            document.getElementById('label').textContent = result.label.toUpperCase();
+            document.getElementById('confidence').textContent = 
+                (result.confidence * 100).toFixed(1) + '%';
+            document.getElementById('ear').textContent = result.ear;
+            document.getElementById('mar').textContent = result.mar;
+            document.getElementById('source').textContent = result.source;
+
+            if (result.annotated_image) {
+                document.getElementById('annotated-image').src = 
+                    'data:image/jpeg;base64,' + result.annotated_image;
+            }
+
+            // Play alert sound if drowsy
+            if (isDrowsy) {
+                playAlert();
+            }
+        }
+
+        // ── Alert sound ─────────────────────────────────────
+        function playAlert() {
+            const ctx = new AudioContext();
+            const oscillator = ctx.createOscillator();
+            oscillator.connect(ctx.destination);
+            oscillator.frequency.value = 880;
+            oscillator.start();
+            oscillator.stop(ctx.currentTime + 0.3);
+        }
+    </script>
+
+</body>
+</html>
