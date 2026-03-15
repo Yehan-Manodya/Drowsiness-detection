@@ -10,19 +10,21 @@ import base64
 from src.detector import DrowsinessDetector
 from src.face_analyzer import FaceAnalyzer
 from src.utils import draw_status, draw_alert_box, encode_frame
+from src.ollama_reader import OllamaReader
 
-# ── Initialize App ─────────────────────────────────────────
+# Initialize App 
 app = FastAPI(title="Drowsiness Detection System")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# ── Load Models Once at Startup ────────────────────────────
+# Load Models Once at Startup 
 print("Loading models...")
 detector = DrowsinessDetector()
 analyzer = FaceAnalyzer()
-print("All models ready! ✅")
+ollama = OllamaReader()
+print("All models ready! ")
 
-# ── Routes ─────────────────────────────────────────────────
+#  Routes 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -60,14 +62,19 @@ async def analyze_image(file: UploadFile = File(...)):
     # Step 2 — YOLOv8 prediction
     yolo_result = detector.predict(frame)
 
-    # Step 3 — Check if LLaMA needed
+   # Step 3 — Check if LLaMA needed
     needs_llama = not yolo_result['is_confident']
 
     # Final label decision
     if needs_llama:
-        # Will be handled by LLaMA in Section 6
-        final_label = yolo_result['label']
-        source = "yolo_uncertain"
+        # Send to LLaMA 3.2 Vision for edge case analysis
+        llama_result = ollama.analyze(frame)
+        if llama_result:
+            final_label = llama_result
+            source = "llama3.2_vision"
+        else:
+            final_label = yolo_result['label']
+            source = "yolo_fallback"
     else:
         final_label = yolo_result['label']
         source = "yolo_confident"
