@@ -1,11 +1,10 @@
 from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi import Request
 import cv2
 import numpy as np
-import io
 import base64
 from src.detector import DrowsinessDetector
 from src.face_analyzer import FaceAnalyzer
@@ -24,7 +23,7 @@ analyzer = FaceAnalyzer()
 ollama = OllamaReader()
 print("All models ready! ")
 
-#  Routes 
+# Routes 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -37,6 +36,10 @@ async def analyze_image(file: UploadFile = File(...)):
     """
     Accepts an uploaded image
     Returns drowsiness analysis result
+    Priority:
+    1. YOLOv8 confident (>80%)  -  trust YOLOv8
+    2. YOLOv8 not confident     -  check MediaPipe
+    3. Both unsure              -  ask LLaMA 3.2 Vision
     """
     # Read uploaded image
     contents = await file.read()
@@ -62,12 +65,26 @@ async def analyze_image(file: UploadFile = File(...)):
     # Step 2 — YOLOv8 prediction
     yolo_result = detector.predict(frame)
 
-   # Step 3 — Check if LLaMA needed
+    # Debug Output 
+    print(f"YOLOv8  : {yolo_result['label']} ({yolo_result['confidence']:.1%}) | Confident: {yolo_result['is_confident']}")
+    print(f"EAR     : {face_result['ear']}  MAR: {face_result['mar']}")
+    print(f"MediaPipe drowsy: {face_result['is_drowsy']}")
+
+    # Step 3 — Final decision based on priority
     needs_llama = not yolo_result['is_confident']
 
-    # Final label decision
-    if needs_llama:
-        # Send to LLaMA 3.2 Vision for edge case analysis
+    if yolo_result['is_confident']:
+        # Priority 1 — YOLOv8 confident - trust it completely
+        final_label = yolo_result['label']
+        source = "yolo_confident"
+
+    elif face_result['is_drowsy']:
+        # Priority 2 — YOLOv8 not confident + MediaPipe says drowsy
+        final_label = "drowsy"
+        source = "mediapipe"
+
+    else:
+        # Priority 3 — Both unsure → ask LLaMA 3.2 Vision
         llama_result = ollama.analyze(frame)
         if llama_result:
             final_label = llama_result
@@ -75,14 +92,9 @@ async def analyze_image(file: UploadFile = File(...)):
         else:
             final_label = yolo_result['label']
             source = "yolo_fallback"
-    else:
-        final_label = yolo_result['label']
-        source = "yolo_confident"
 
-    # Override with MediaPipe if clearly drowsy
-    if face_result['is_drowsy']:
-        final_label = "drowsy"
-        source = "mediapipe"
+    print(f"Final   : {final_label} | Source: {source}")
+    print("═════════════════════════════════════════════════")
 
     # Draw on frame
     annotated = face_result['annotated_frame']
@@ -97,7 +109,7 @@ async def analyze_image(file: UploadFile = File(...)):
     if final_label == "drowsy":
         annotated = draw_alert_box(annotated)
 
-    # Convert frame to base64 for sending to browser
+    # Convert frame to base64
     _, buffer = cv2.imencode('.jpg', annotated)
     img_base64 = base64.b64encode(buffer).decode('utf-8')
 

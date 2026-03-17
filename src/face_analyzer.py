@@ -95,8 +95,8 @@ class FaceAnalyzer:
         mar = self.calculate_mar(landmarks, self.MOUTH, frame_w, frame_h)
 
         # Thresholds
-        EAR_THRESHOLD = 0.25  # below this = eyes closing
-        MAR_THRESHOLD = 0.60  # above this = yawning
+        EAR_THRESHOLD = 0.15  # below this = eyes closing
+        MAR_THRESHOLD = 0.75  # above this = yawning
 
         is_drowsy = ear < EAR_THRESHOLD or mar > MAR_THRESHOLD
 
